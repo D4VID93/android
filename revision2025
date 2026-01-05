@@ -1,0 +1,278 @@
+package com.example.puzzlemaritime
+
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Color as AndroidColor
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+
+// ====================================================================================
+// MAIN ACTIVITY
+// ====================================================================================
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    PuzzleApp()
+                }
+            }
+        }
+    }
+}
+
+// ====================================================================================
+// 1. COMPOSANT RACINE & SPLASH SCREEN
+// ====================================================================================
+
+@Composable
+fun PuzzleApp() {
+    var isGameStarted by remember { mutableStateOf(false) }
+
+    // Génération du drapeau DELTA (Jaune/Bleu/Jaune) demandé
+    val deltaFlag = remember { generateDeltaFlag(600, 600) }
+
+    if (!isGameStarted) {
+        // [cite: 6] Le splash screen
+        SplashScreen(onFinished = { isGameStarted = true })
+    } else {
+        // [cite: 31] Gestion du jeu
+        GameScreen(fullImage = deltaFlag)
+    }
+}
+
+@Composable
+fun SplashScreen(onFinished: () -> Unit) {
+    // Délai de 3 secondes avant de lancer le jeu
+    LaunchedEffect(true) {
+        delay(3000)
+        onFinished()
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Puzzle Maritime",
+            fontSize = 30.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        Text("Chargement du pavillon Delta...")
+        Spacer(modifier = Modifier.height(30.dp))
+
+        // Appel du composant FillBar demandé pour la barre de progression
+        FillBar()
+    }
+}
+
+/**
+ * COMPOSANT FILLBAR
+ * [cite: 10] Une barre de progression
+ * [cite: 12] Barre de progression sur le splash screen
+ */
+@Composable
+fun FillBar() {
+    // Utilisation d'une barre linéaire qui se "remplit" (Fill) pour correspondre au nom
+    LinearProgressIndicator(
+        modifier = Modifier
+            .width(200.dp)
+            .height(8.dp),
+        color = MaterialTheme.colorScheme.secondary,
+        trackColor = MaterialTheme.colorScheme.surfaceVariant
+    )
+}
+
+// ====================================================================================
+// 2. ECRAN DE JEU (GameScreen)
+// [cite: 40] Assemblage des éléments du jeu
+// ====================================================================================
+
+data class PuzzlePiece(val id: Int, val bitmap: Bitmap)
+
+@Composable
+fun GameScreen(fullImage: Bitmap) {
+    val rows = 3
+    val cols = 3
+
+    // États du jeu
+    var pieces by remember { mutableStateOf<List<PuzzlePiece>>(emptyList()) }
+    var selectedIndex by remember { mutableStateOf<Int?>(null) }
+    var isWon by remember { mutableStateOf(false) }
+    var moves by remember { mutableStateOf(0) } // Compteur de coups (optionnel mais classique)
+
+    // Initialisation
+    LaunchedEffect(Unit) {
+        val rawList = splitImage(fullImage, rows, cols)
+        pieces = rawList.shuffled()
+    }
+
+    // [cite: 28] La permutation
+    fun swapPieces(index: Int) {
+        if (isWon) return
+
+        val currentSel = selectedIndex
+        if (currentSel == null) {
+            selectedIndex = index
+        } else {
+            val mutableList = pieces.toMutableList()
+            val temp = mutableList[currentSel]
+            mutableList[currentSel] = mutableList[index]
+            mutableList[index] = temp
+            
+            pieces = mutableList
+            selectedIndex = null
+            moves++
+
+            // Vérification victoire : id == index pour tous
+            isWon = pieces.withIndex().all { (i, p) -> p.id == i }
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween // Espace entre grille et commandes
+    ) {
+        // En-tête
+        Text(
+            text = if (isWon) "BRAVO !" else "Reconstituez le Pavillon Delta",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isWon) Color(0xFF2E7D32) else Color.Black
+        )
+
+        // [cite: 22] Affichage de toutes les pièces (Grille)
+        if (pieces.isNotEmpty()) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(cols),
+                modifier = Modifier.weight(1f).aspectRatio(1f), // Carré
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                itemsIndexed(pieces) { index, piece ->
+                    // [cite: 18] Affichage d'une pièce de puzzle
+                    PuzzlePieceView(
+                        piece = piece,
+                        isSelected = (selectedIndex == index),
+                        onClick = { swapPieces(index) }
+                    )
+                }
+            }
+        }
+
+        // [cite: 43] Composant "Commonlige" (Ligne de commande / Config)
+        // C'est ici qu'on met les boutons de gestion
+        CommandBar(
+            onReset = {
+                pieces = pieces.shuffled()
+                isWon = false
+                selectedIndex = null
+                moves = 0
+            },
+            moveCount = moves
+        )
+    }
+}
+
+// ====================================================================================
+// 3. COMPOSANTS SECONDAIRES (Pièce & Commandes)
+// ====================================================================================
+
+@Composable
+fun PuzzlePieceView(
+    piece: PuzzlePiece,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .aspectRatio(1f)
+            .border(3.dp, if (isSelected) Color.Red else Color.Transparent)
+            .clickable { onClick() }
+    ) {
+        Image(
+            bitmap = piece.bitmap.asImageBitmap(),
+            contentDescription = "Pièce ${piece.id}",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+/**
+ * Composant pour la zone de boutons (souvent appelé CommandBar ou Config dans les TP)
+ */
+@Composable
+fun CommandBar(onReset: () -> Unit, moveCount: Int) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("Coups : $moveCount", fontSize = 18.sp)
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(onClick = onReset) {
+            Text("Recommencer")
+        }
+    }
+}
+
+// ====================================================================================
+// UTILITAIRES (Génération & Découpage)
+// ====================================================================================
+
+fun generateDeltaFlag(width: Int, height: Int): Bitmap {
+    val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bmp)
+    val paint = Paint()
+    val h = height / 3f
+
+    // Jaune - Bleu - Jaune
+    paint.color = AndroidColor.YELLOW
+    canvas.drawRect(0f, 0f, width.toFloat(), h, paint)
+    paint.color = AndroidColor.BLUE
+    canvas.drawRect(0f, h, width.toFloat(), h * 2, paint)
+    paint.color = AndroidColor.YELLOW
+    canvas.drawRect(0f, h * 2, width.toFloat(), height.toFloat(), paint)
+
+    return bmp
+}
+
+fun splitImage(bmp: Bitmap, rows: Int, cols: Int): List<PuzzlePiece> {
+    val list = mutableListOf<PuzzlePiece>()
+    val w = bmp.width / cols
+    val h = bmp.height / rows
+    var id = 0
+    for (r in 0 until rows) {
+        for (c in 0 until cols) {
+            val sub = Bitmap.createBitmap(bmp, c * w, r * h, w, h)
+            list.add(PuzzlePiece(id++, sub))
+        }
+    }
+    return list
+}
